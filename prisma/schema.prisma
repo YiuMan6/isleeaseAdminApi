@@ -33,16 +33,17 @@ model Image {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Product {
-  id         Int      @id @default(autoincrement())
+  id         Int         @id @default(autoincrement())
   title      String
   des        String
   price      Float
   dimensions Json
-  status     Boolean  @default(true)
-  createdAt  DateTime @default(now())
+  status     Boolean     @default(true)
+  createdAt  DateTime    @default(now())
   updatedAt  DateTime
   Image      Image[]
   Video      Video[]
+  OrderItem  OrderItem[] // ← 被下单时的引用（可选，支持反查）
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -54,6 +55,7 @@ model User {
   password     String
   retailerTier RetailerTier?
   name         String
+  orders       Order[]       // ← 一个用户多个订单
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -65,6 +67,30 @@ model Video {
   createdAt DateTime @default(now())
   productId Int
   Product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+/// 客户订单表
+model Order {
+  id              Int         @id @default(autoincrement())
+  user            User?       @relation(fields: [userId], references: [id])
+  userId          Int?        // 👈 可空
+  customerName    String      // 👈 匿名或已知客户名
+  customerEmail   String
+  customerPhone   String
+  shippingAddress String
+  position        String
+  createdAt       DateTime    @default(now())
+  items           OrderItem[]
+}
+
+/// 订单项表（连接订单和产品）
+model OrderItem {
+  id        Int      @id @default(autoincrement())
+  quantity  Int
+  order     Order    @relation(fields: [orderId], references: [id])
+  orderId   Int
+  product   Product  @relation(fields: [productId], references: [id])
+  productId Int
 }
 
 enum RetailerTier {

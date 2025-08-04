@@ -1,15 +1,18 @@
 import express from 'express';
 import { corsMiddleware } from './middlewares/cors.middleware';
+import orderRoutes from './routes/order.route';
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 中间件
-app.use(express.json());
+// 全局中间件
 app.use(corsMiddleware);
-// 路由
-// app.use('/api/users', userRoutes);
+app.use(express.json());
 
-// 启动服务器
+// 注册路由
+app.use('/api/orders', orderRoutes);
+
+// 启动服务
 app.listen(PORT, () => {
-  console.log(`Server is running at http://localhost:${PORT}`);
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
 });

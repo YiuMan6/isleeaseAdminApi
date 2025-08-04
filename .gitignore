@@ -4,6 +4,10 @@ node_modules/
 # Output directory
 dist/
 
+# Prisma
+prisma/dev.db
+prisma/migrations/
+
 # Logs
 logs/
 *.log
