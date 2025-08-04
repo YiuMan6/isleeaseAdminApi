@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model AccountRequest {
+  id               String   @id
+  company_name     String
+  contact_person   String
+  email            String
+  phone            String
+  website          String?
+  business_address String
+  created_at       DateTime @default(now())
+  approved         Boolean  @default(false)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Image {
+  id        Int      @id @default(autoincrement())
+  src       String
+  alt       String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  productId Int
+  Product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Product {
+  id         Int      @id @default(autoincrement())
+  title      String
+  des        String
+  price      Float
+  dimensions Json
+  status     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime
+  Image      Image[]
+  Video      Video[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model User {
+  id           Int           @id @default(autoincrement())
+  createdAt    DateTime      @default(now())
+  label        UserLabel
+  email        String        @unique
+  password     String
+  retailerTier RetailerTier?
+  name         String
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Video {
+  id        Int      @id @default(autoincrement())
+  video     String
+  thumbnail String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  productId Int
+  Product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+enum RetailerTier {
+  TIER_1
+  TIER_2
+  TIER_3
+}
+
+enum UserLabel {
+  RETAILER
+  INTERNAL
+  VIP
+}
