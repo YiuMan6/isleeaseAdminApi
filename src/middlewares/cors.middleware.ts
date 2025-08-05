@@ -6,6 +6,7 @@ export const corsMiddleware = cors({
       "https://wholesale.isleease.com",
       "https://admin.isleease.com",
       "http://localhost:5173",
+      "http://localhost:5174",
     ];
 
     // 允许无 Origin (Postman、服务器内部调用) 或匹配白名单
