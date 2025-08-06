@@ -73,15 +73,19 @@ model Video {
 model Order {
   id              Int         @id @default(autoincrement())
   user            User?       @relation(fields: [userId], references: [id])
-  userId          Int?        // 👈 可空
-  customerName    String      // 👈 匿名或已知客户名
+  userId          Int?
+  customerName    String
   customerEmail   String
   customerPhone   String
   shippingAddress String
   position        String
+  note            String?     // ✅ 可选备注字段
+  barcodeAll      Boolean     @default(false)
+  packageType     PackageType
   createdAt       DateTime    @default(now())
   items           OrderItem[]
 }
+
 
 /// 订单项表（连接订单和产品）
 model OrderItem {
@@ -91,6 +95,11 @@ model OrderItem {
   orderId   Int
   product   Product  @relation(fields: [productId], references: [id])
   productId Int
+}
+
+enum PackageType {
+  boxes
+  opp
 }
 
 enum RetailerTier {
