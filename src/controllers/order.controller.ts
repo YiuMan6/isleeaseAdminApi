@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { createOrderService } from '../services/order.service'
+import { createOrderService, getAllOrdersService } from '../services/order.service'
 
 export const createOrder = async (req: Request, res: Response) => {
   try {
@@ -8,5 +8,15 @@ export const createOrder = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Create order error:', error);
     res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+export const getAllOrders = async (req: Request, res: Response) => {
+  try {
+    const orders = await getAllOrdersService();
+    res.json({ success: true, data: orders });
+  } catch (error) {
+    console.error('Get all orders error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get orders' });
   }
 };

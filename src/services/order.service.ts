@@ -62,3 +62,16 @@ return prisma.order.create({
   },
 });
 };
+
+export const getAllOrdersService = async () => {
+  return prisma.order.findMany({
+    orderBy: { createdAt: 'desc' },
+    include: {
+      items: {
+        include: {
+          product: true, // 拿到产品信息
+        },
+      },
+    },
+  });
+};
