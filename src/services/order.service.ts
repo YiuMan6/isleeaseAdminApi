@@ -64,14 +64,34 @@ return prisma.order.create({
 };
 
 export const getAllOrdersService = async () => {
-  return prisma.order.findMany({
+  const orders = await prisma.order.findMany({
     orderBy: { createdAt: 'desc' },
     include: {
       items: {
         include: {
-          product: true, // 拿到产品信息
+          product: true, // 获取产品信息（含价格）
         },
       },
     },
   });
+
+  // 为每个订单计算总价、GST、含税总价
+  const ordersWithTotals = orders.map((order) => {
+    const total = order.items.reduce((sum, item) => {
+      const price = item.product?.price ?? 0;
+      return sum + price * item.quantity;
+    }, 0);
+
+    const gst = total * 0.1;
+    const totalWithGST = total + gst;
+
+    return {
+      ...order,
+      total,
+      gst,
+      totalWithGST,
+    };
+  });
+
+  return ordersWithTotals;
 };
