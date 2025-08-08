@@ -1,5 +1,5 @@
 // src/services/order.service.ts
-import { prisma } from '../config/db';
+import { prisma } from "../config/db";
 
 interface OrderItemInput {
   productId: number;
@@ -13,12 +13,11 @@ interface CreateOrderInput {
   customerPhone: string;
   shippingAddress: string;
   position: string;
-  note?:string;
-  barcodeAll: boolean;         // ✅ 新增
+  note?: string;
+  barcodeAll: boolean; // ✅ 新增
   packageType: "boxes" | "opp"; // ✅ 新增
   items: OrderItemInput[];
 }
-
 
 export const createOrderService = async (data: CreateOrderInput) => {
   const {
@@ -31,41 +30,41 @@ export const createOrderService = async (data: CreateOrderInput) => {
     note,
     barcodeAll,
     packageType,
-    items
+    items,
   } = data;
 
-return prisma.order.create({
-  data: {
-    userId: userId ?? undefined,
-    customerName,
-    customerEmail,
-    customerPhone,
-    shippingAddress,
-    position,
-    note,
-    barcodeAll,     // ✅ 新增
-    packageType,    // ✅ 新增
-    items: {
-      create: items.map((item) => ({
-        product: { connect: { id: item.productId } },
-        quantity: item.quantity,
-      })),
-    },
-  },
-  include: {
-    user: true,
-    items: {
-      include: {
-        product: true,
+  return prisma.order.create({
+    data: {
+      userId: userId ?? undefined,
+      customerName,
+      customerEmail,
+      customerPhone,
+      shippingAddress,
+      position,
+      note,
+      barcodeAll, // ✅ 新增
+      packageType, // ✅ 新增
+      items: {
+        create: items.map((item) => ({
+          product: { connect: { id: item.productId } },
+          quantity: item.quantity,
+        })),
       },
     },
-  },
-});
+    include: {
+      user: true,
+      items: {
+        include: {
+          product: true,
+        },
+      },
+    },
+  });
 };
 
 export const getAllOrdersService = async () => {
   const orders = await prisma.order.findMany({
-    orderBy: { createdAt: 'desc' },
+    orderBy: { createdAt: "desc" },
     include: {
       items: {
         include: {
@@ -94,4 +93,15 @@ export const getAllOrdersService = async () => {
   });
 
   return ordersWithTotals;
+};
+
+export const deleteOrder = async (orderId: number) => {
+  return await prisma.$transaction([
+    prisma.orderItem.deleteMany({
+      where: { orderId },
+    }),
+    prisma.order.delete({
+      where: { id: orderId },
+    }),
+  ]);
 };
