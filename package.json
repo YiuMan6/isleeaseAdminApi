@@ -4,9 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-     "postinstall": "prisma generate",
-     "start": "tsc && node dist/index.js"
+    "db:migrate:dev": "dotenv -e .env.development -- prisma migrate dev",
+    "db:pull:dev": "dotenv -e .env.development -- prisma db pull",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "postinstall": "prisma generate",
+    "start": "tsc && node dist/index.js"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +23,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
+    "dotenv-cli": "^10.0.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.2"
   }
