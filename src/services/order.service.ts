@@ -35,7 +35,7 @@ export const createOrderService = async (data: CreateOrderInput) => {
 
   return prisma.order.create({
     data: {
-      userId: userId ?? undefined,
+      userId: userId ?? null,
       customerName,
       customerEmail,
       customerPhone,
