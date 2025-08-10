@@ -89,7 +89,8 @@ model User {
   name         String
 
   // 仅 INTERNAL 有意义；其它用户为 NULL
-  adminLevel AdminLevel?
+  adminLevel     AdminLevel?
+  sessionVersion Int         @default(0) // 🔐 失效刷新令牌
 
   customerId Int?
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
