@@ -25,6 +25,8 @@ yarn-error.log*
 .env
 .env.local
 .env.*.local
+.env.development
+.env.production
 
 # TypeScript cache
 *.tsbuildinfo

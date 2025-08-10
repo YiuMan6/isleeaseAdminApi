@@ -3,11 +3,12 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// ========== 业务表 ==========
 model AccountRequest {
   id               String   @id
   company_name     String
@@ -20,7 +21,6 @@ model AccountRequest {
   approved         Boolean  @default(false)
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Image {
   id        Int      @id @default(autoincrement())
   src       String
@@ -29,36 +29,10 @@ model Image {
   createdAt DateTime @default(now())
   productId Int
   Product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model Product {
-  id         Int         @id @default(autoincrement())
-  title      String
-  des        String
-  price      Float
-  dimensions Json
-  status     Boolean     @default(true)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime
-  Image      Image[]
-  Video      Video[]
-  OrderItem  OrderItem[] // ← 被下单时的引用（可选，支持反查）
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model User {
-  id           Int           @id @default(autoincrement())
-  createdAt    DateTime      @default(now())
-  label        UserLabel
-  email        String        @unique
-  password     String
-  retailerTier RetailerTier?
-  name         String
-  orders       Order[]       // ← 一个用户多个订单
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Video {
   id        Int      @id @default(autoincrement())
   video     String
@@ -67,39 +41,129 @@ model Video {
   createdAt DateTime @default(now())
   productId Int
   Product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
 }
 
-/// 客户订单表
+model Product {
+  id         Int         @id @default(autoincrement())
+  title      String
+  des        String
+  price      Decimal     @db.Decimal(12, 2)
+  dimensions Json
+  status     Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @default(now()) @updatedAt
+  Image      Image[]
+  OrderItem  OrderItem[]
+  Video      Video[]
+}
+
+/// ========== 客户主数据（无账号也有）==========
+model Customer {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String?
+  phone     String?
+  company   String?
+  abn       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  users  User[]
+  orders Order[]
+
+  @@index([email])
+  @@index([phone])
+}
+
+/// ========== 用户 ==========
+
+model User {
+  id           Int           @id @default(autoincrement())
+  createdAt    DateTime      @default(now())
+  label        UserLabel
+  email        String        @unique
+  password     String
+  retailerTier RetailerTier?
+  name         String
+
+  // 仅 INTERNAL 有意义；其它用户为 NULL
+  adminLevel     AdminLevel?
+  sessionVersion Int         @default(0) // 🔐 失效刷新令牌
+
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  // （可选，将来要更细权限时可以启用）
+  // scopes       String[]     @db.Text[] @default([])
+
+  orders Order[]
+}
+
+/// ========== 订单 & 订单项 ==========
 model Order {
-  id              Int         @id @default(autoincrement())
-  user            User?       @relation(fields: [userId], references: [id])
-  userId          Int?
-  customerName    String
-  customerEmail   String
-  customerPhone   String
+  id Int @id @default(autoincrement())
+
+  // 过渡期：可空（历史代下单/未登录数据）；你网站若要求登录下单，回填后可设为必填
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // 新增归属客户（统一聚合历史）；过渡期可空，回填后设为必填
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  // 快照字段（下单当时的信息，发票/审计用）
   shippingAddress String
   position        String
-  note            String?     // ✅ 可选备注字段
-  barcodeAll      Boolean     @default(false)
+  createdAt       DateTime      @default(now())
+  customerEmail   String
+  customerName    String
+  customerPhone   String
+  barcodeAll      Boolean       @default(false)
   packageType     PackageType
-  createdAt       DateTime    @default(now())
-  items           OrderItem[]
+  note            String?
+  paidAt          DateTime?
+  paymentStatus   PaymentStatus @default(unpaid)
+  status          OrderStatus   @default(pending)
+  updatedAt       DateTime      @default(now()) @updatedAt
+
+  items OrderItem[]
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([customerId])
 }
 
-
-/// 订单项表（连接订单和产品）
 model OrderItem {
-  id        Int      @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   quantity  Int
-  order     Order    @relation(fields: [orderId], references: [id])
   orderId   Int
-  product   Product  @relation(fields: [productId], references: [id])
   productId Int
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@unique([orderId, productId])
+  @@index([orderId])
+  @@index([productId])
 }
 
-enum PackageType {
-  boxes
-  opp
+/// ========== 枚举 ==========
+enum OrderStatus {
+  pending
+  confirmed
+  paid
+  packed
+  shipped
+  completed
+  cancelled
+}
+
+enum PaymentStatus {
+  unpaid
+  paid
+  refunded
 }
 
 enum RetailerTier {
@@ -108,8 +172,18 @@ enum RetailerTier {
   TIER_3
 }
 
+enum AdminLevel {
+  SUPER // 最高管理员
+  ADMIN // 普通管理员
+}
+
 enum UserLabel {
   RETAILER
   INTERNAL
   VIP
+}
+
+enum PackageType {
+  boxes
+  opp
 }
