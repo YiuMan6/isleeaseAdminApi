@@ -16,13 +16,19 @@
   "packageManager": "pnpm@10.13.1",
   "dependencies": {
     "@prisma/client": "^6.13.0",
+    "bcryptjs": "^3.0.2",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^5.1.0",
-    "prisma": "^6.13.0"
+    "jsonwebtoken": "^9.0.2",
+    "prisma": "^6.13.0",
+    "zod": "^4.0.17"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.9",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.2.1",
     "dotenv-cli": "^10.0.0",
     "ts-node": "^10.9.2",

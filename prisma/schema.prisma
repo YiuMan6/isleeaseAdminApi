@@ -78,6 +78,7 @@ model Customer {
 }
 
 /// ========== 用户 ==========
+
 model User {
   id           Int           @id @default(autoincrement())
   createdAt    DateTime      @default(now())
@@ -87,9 +88,14 @@ model User {
   retailerTier RetailerTier?
   name         String
 
-  // 过渡期：可空；回填完成后改为必填
+  // 仅 INTERNAL 有意义；其它用户为 NULL
+  adminLevel AdminLevel?
+
   customerId Int?
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  // （可选，将来要更细权限时可以启用）
+  // scopes       String[]     @db.Text[] @default([])
 
   orders Order[]
 }
@@ -163,6 +169,11 @@ enum RetailerTier {
   TIER_1
   TIER_2
   TIER_3
+}
+
+enum AdminLevel {
+  SUPER // 最高管理员
+  ADMIN // 普通管理员
 }
 
 enum UserLabel {
