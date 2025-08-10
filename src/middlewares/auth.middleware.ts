@@ -7,13 +7,12 @@ type AuthedRequest = Request & {
     id: number;
     label: "INTERNAL" | "RETAILER" | "VIP" | string;
     customerId?: number | null;
-    adminLevel?: "ADMIN" | "SUPER" | null;
+    adminLevel?: AdminLevel | null;
     sessionVersion?: number;
   };
 };
 
-const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET!;
-const rank: Record<string, number> = { ADMIN: 1, SUPER: 2 };
+const ACCESS_SECRET = process.env.ACCESS_TOKEN_SECRET || "dev-access-secret";
 
 export function requireAuth(
   req: AuthedRequest,
@@ -29,9 +28,9 @@ export function requireAuth(
     req.user = {
       id: Number(p.sub),
       label: p.label,
-      customerId: p.customerId,
-      adminLevel: p.adminLevel,
-      sessionVersion: p.sv,
+      customerId: p.customerId ?? null,
+      adminLevel: (p.adminLevel ?? null) as AdminLevel | null,
+      sessionVersion: p.sv ?? 0,
     };
     next();
   } catch {
@@ -39,17 +38,18 @@ export function requireAuth(
   }
 }
 
+const rank: Record<AdminLevel, number> = { ADMIN: 1, SUPER: 2 };
+
 export function requireAdminLevel(min: AdminLevel = "ADMIN") {
-  // 👇 把 req/res/next 都标注类型
-  return (req: AuthedRequest, res: Response, next: NextFunction): void => {
+  return (req: AuthedRequest, res: Response, next: NextFunction) => {
     const u = req.user;
-    if (!u) return void res.status(401).json({ message: "No token" });
+    if (!u) return res.status(401).json({ message: "No token" });
     if (u.label !== "INTERNAL")
-      return void res.status(403).json({ message: "Admins only" });
+      return res.status(403).json({ message: "Admins only" });
 
     const level = String(u.adminLevel ?? "ADMIN").toUpperCase() as AdminLevel;
     if (rank[level] < rank[min]) {
-      return void res.status(403).json({ message: `Require ${min}` });
+      return res.status(403).json({ message: `Require ${min}` });
     }
     next();
   };

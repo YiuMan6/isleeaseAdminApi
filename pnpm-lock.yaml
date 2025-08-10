@@ -24,7 +24,7 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0
       jsonwebtoken:
-        specifier: ^9.0.2
+        specifier: ^9
         version: 9.0.2
       prisma:
         specifier: ^6.13.0
