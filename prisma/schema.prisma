@@ -8,8 +8,7 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-/// *
-///  * ========== 业务表 ==========
+/// ========== 业务表 ==========
 model AccountRequest {
   id               String   @id
   company_name     String
@@ -60,8 +59,25 @@ model Product {
   Video      Video[]
 }
 
-/// *
-///  * ========== 用户 ==========
+/// ========== 客户主数据（无账号也有）==========
+model Customer {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String?
+  phone     String?
+  company   String?
+  abn       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  users  User[]
+  orders Order[]
+
+  @@index([email])
+  @@index([phone])
+}
+
+/// ========== 用户 ==========
 model User {
   id           Int           @id @default(autoincrement())
   createdAt    DateTime      @default(now())
@@ -70,14 +86,27 @@ model User {
   password     String
   retailerTier RetailerTier?
   name         String
-  orders       Order[]
+
+  // 过渡期：可空；回填完成后改为必填
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  orders Order[]
 }
 
-/// *
-///  * ========== 订单 & 订单项 ==========
+/// ========== 订单 & 订单项 ==========
 model Order {
-  id              Int           @id @default(autoincrement())
-  userId          Int?
+  id Int @id @default(autoincrement())
+
+  // 过渡期：可空（历史代下单/未登录数据）；你网站若要求登录下单，回填后可设为必填
+  userId Int?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // 新增归属客户（统一聚合历史）；过渡期可空，回填后设为必填
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  // 快照字段（下单当时的信息，发票/审计用）
   shippingAddress String
   position        String
   createdAt       DateTime      @default(now())
@@ -91,12 +120,13 @@ model Order {
   paymentStatus   PaymentStatus @default(unpaid)
   status          OrderStatus   @default(pending)
   updatedAt       DateTime      @default(now()) @updatedAt
-  user            User?         @relation(fields: [userId], references: [id])
-  items           OrderItem[]
+
+  items OrderItem[]
 
   @@index([createdAt])
   @@index([status])
   @@index([paymentStatus])
+  @@index([customerId])
 }
 
 model OrderItem {
@@ -112,8 +142,7 @@ model OrderItem {
   @@index([productId])
 }
 
-/// *
-///  * ========== 枚举 ==========
+/// ========== 枚举 ==========
 enum OrderStatus {
   pending
   confirmed
