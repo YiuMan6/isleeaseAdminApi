@@ -69,51 +69,32 @@ model Customer {
   abn       String?
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
-
-  users  User[]
-  orders Order[]
+  orders    Order[]
+  users     User[]
 
   @@index([email])
   @@index([phone])
 }
 
-/// ========== 用户 ==========
-
 model User {
-  id           Int           @id @default(autoincrement())
-  createdAt    DateTime      @default(now())
-  label        UserLabel
-  email        String        @unique
-  password     String
-  retailerTier RetailerTier?
-  name         String
-
-  // 仅 INTERNAL 有意义；其它用户为 NULL
+  id             Int           @id @default(autoincrement())
+  createdAt      DateTime      @default(now())
+  label          UserLabel
+  email          String        @unique
+  password       String
+  retailerTier   RetailerTier?
+  name           String
+  customerId     Int?
   adminLevel     AdminLevel?
-  sessionVersion Int         @default(0) // 🔐 失效刷新令牌
-
-  customerId Int?
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-
-  // （可选，将来要更细权限时可以启用）
-  // scopes       String[]     @db.Text[] @default([])
-
-  orders Order[]
+  sessionVersion Int           @default(0)
+  orders         Order[]
+  customer       Customer?     @relation(fields: [customerId], references: [id])
 }
 
 /// ========== 订单 & 订单项 ==========
 model Order {
-  id Int @id @default(autoincrement())
-
-  // 过渡期：可空（历史代下单/未登录数据）；你网站若要求登录下单，回填后可设为必填
-  userId Int?
-  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  // 新增归属客户（统一聚合历史）；过渡期可空，回填后设为必填
-  customerId Int?
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-
-  // 快照字段（下单当时的信息，发票/审计用）
+  id              Int           @id @default(autoincrement())
+  userId          Int?
   shippingAddress String
   position        String
   createdAt       DateTime      @default(now())
@@ -127,8 +108,10 @@ model Order {
   paymentStatus   PaymentStatus @default(unpaid)
   status          OrderStatus   @default(pending)
   updatedAt       DateTime      @default(now()) @updatedAt
-
-  items OrderItem[]
+  customerId      Int?
+  customer        Customer?     @relation(fields: [customerId], references: [id])
+  user            User?         @relation(fields: [userId], references: [id])
+  items           OrderItem[]
 
   @@index([createdAt])
   @@index([status])
@@ -173,8 +156,8 @@ enum RetailerTier {
 }
 
 enum AdminLevel {
-  SUPER // 最高管理员
-  ADMIN // 普通管理员
+  SUPER
+  ADMIN
 }
 
 enum UserLabel {
