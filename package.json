@@ -8,7 +8,8 @@
     "db:pull:dev": "dotenv -e .env.development -- prisma db pull",
     "dev": "dotenv -e .env -- ts-node-dev --respawn --transpile-only src/index.ts",
     "postinstall": "prisma generate",
-    "start": "ts-node src/index.ts"
+    "start": "ts-node src/index.ts",
+    "start:prod": "sh -c \"pnpm prisma migrate deploy && ts-node src/index.ts\""
   },
   "keywords": [],
   "author": "",
