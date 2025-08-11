@@ -3,12 +3,11 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
     "db:migrate:dev": "dotenv -e .env -- prisma migrate dev",
-    "db:pull:dev": "dotenv -e .env.development -- prisma db pull",
     "dev": "dotenv -e .env -- ts-node-dev --respawn --transpile-only src/index.ts",
     "postinstall": "prisma generate",
-    "start": "ts-node src/index.ts",
     "start:prod": "sh -c \"pnpm prisma migrate deploy && ts-node src/index.ts\""
   },
   "keywords": [],
