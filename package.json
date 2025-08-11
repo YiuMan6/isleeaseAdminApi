@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
     "db:migrate:dev": "dotenv -e .env -- prisma migrate dev",
     "db:pull:dev": "dotenv -e .env.development -- prisma db pull",
