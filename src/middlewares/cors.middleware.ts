@@ -2,7 +2,6 @@ import cors from "cors";
 
 export const corsMiddleware = cors({
   origin: (origin, callback) => {
-    console.log("[CORS] request origin =", origin);
     const allowed = [
       "https://admin.isleease.com",
       "http://localhost:5173",
