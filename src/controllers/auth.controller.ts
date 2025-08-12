@@ -11,10 +11,10 @@ import {
 } from "../services/auth.service";
 
 type SameSiteOpt = "lax" | "none" | "strict";
+const PROD = process.env.NODE_ENV === "production";
 // ===== 固定配置 =====
 const COOKIE_NAME = "refresh_token"; // 刷新 token 名
-const COOKIE_DOMAIN = ".isleease.com";
-const PROD = true;
+const COOKIE_DOMAIN: string | undefined = PROD ? ".isleease.com" : undefined;
 const SAMESITE: SameSiteOpt = "lax";
 const SECURE = true;
 

@@ -7,6 +7,7 @@ import {
   deleteOrder,
   updateOrderStatusService,
   updateOrderSnapshotService, // ← 新增
+  updateOrderShippingService,
 } from "../services/order.service";
 
 // —— 按你的 schema（小写枚举）——
@@ -163,5 +164,37 @@ export const updateOrderSnapshot = async (req: Request, res: Response) => {
     return res
       .status(400)
       .json({ message: e?.message || "Failed to update order" });
+  }
+};
+
+const UpdateShippingSchema = z.object({
+  shippingCartons: z.coerce.number().int().min(0).optional().nullable(), // null=清零
+  shippingCost: z.union([z.coerce.number(), z.null()]).optional(), // null=清空
+  shippingGstIncl: z.boolean().optional().nullable(), // null=>默认 true
+  shippingNote: z.string().optional().nullable(), // null=清空
+});
+
+export const patchOrderShipping = async (req: Request, res: Response) => {
+  const orderId = Number(req.params.id);
+  if (!orderId) return res.status(400).json({ message: "Invalid order id" });
+
+  const parsed = UpdateShippingSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ message: "Invalid body", issues: parsed.error.flatten() });
+  }
+
+  try {
+    const updated = await updateOrderShippingService(orderId, parsed.data);
+    return res.json({ success: true, data: updated });
+  } catch (e: any) {
+    if (e?.code === "P2025") {
+      return res.status(404).json({ message: "Order not found" });
+    }
+    console.error("Patch order shipping error:", e);
+    return res
+      .status(400)
+      .json({ message: e?.message || "Failed to update shipping" });
   }
 };

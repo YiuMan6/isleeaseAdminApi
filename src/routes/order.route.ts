@@ -5,7 +5,8 @@ import {
   getOrderById,
   deleteOrderHandler,
   patchOrderStatus,
-  updateOrderSnapshot, // ← 新增
+  updateOrderSnapshot,
+  patchOrderShipping, // ← 新增
 } from "../controllers/order.controller";
 import { requireAuth, requireAdminLevel } from "../middlewares/auth.middleware";
 
@@ -36,6 +37,13 @@ router.patch(
   requireAuth,
   requireAdminLevel("ADMIN"),
   updateOrderSnapshot
+);
+
+router.patch(
+  "/:id/shipping",
+  requireAuth,
+  requireAdminLevel("ADMIN"),
+  patchOrderShipping
 );
 
 export default router;

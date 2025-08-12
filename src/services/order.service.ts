@@ -19,6 +19,102 @@ interface CreateOrderInput {
   items: OrderItemInput[];
 }
 
+type UpdateShippingInput = {
+  shippingCartons?: number | null;
+  shippingCost?: number | null;
+  shippingGstIncl?: boolean | null;
+  shippingNote?: string | null;
+};
+
+// Decimal 保留 2 位再转 number
+const toNum2 = (d: Prisma.Decimal | number) =>
+  Number(new Prisma.Decimal(d).toFixed(2));
+
+function calcOrderMoney(order: any) {
+  // 产品小计（未税）
+  const productSubtotalDec = order.items.reduce(
+    (sum: Prisma.Decimal, it: any) => {
+      const price = (it.product?.price ??
+        new Prisma.Decimal(0)) as Prisma.Decimal;
+      return sum.add(price.mul(it.quantity));
+    },
+    new Prisma.Decimal(0)
+  );
+
+  // 运费
+  const shippingCostDec =
+    (order.shippingCost as Prisma.Decimal | null) ?? new Prisma.Decimal(0);
+  const shippingGstIncl = order.shippingGstIncl ?? true;
+
+  const shippingExGstDec = shippingGstIncl
+    ? shippingCostDec.div(1.1)
+    : shippingCostDec;
+
+  const gstOnProductsDec = productSubtotalDec.mul(0.1);
+  const gstOnShippingDec = shippingExGstDec.mul(0.1);
+
+  const subtotalExGstDec = productSubtotalDec.add(shippingExGstDec);
+  const gstTotalDec = gstOnProductsDec.add(gstOnShippingDec);
+  const grandTotalDec = subtotalExGstDec.add(gstTotalDec);
+
+  return {
+    money: {
+      productSubtotal: toNum2(productSubtotalDec),
+      shippingExGst: toNum2(shippingExGstDec),
+      gstOnProducts: toNum2(gstOnProductsDec),
+      gstOnShipping: toNum2(gstOnShippingDec),
+      subtotalExGst: toNum2(subtotalExGstDec),
+      gstTotal: toNum2(gstTotalDec),
+      totalWithGST: toNum2(grandTotalDec),
+    },
+  };
+}
+
+export async function updateOrderShippingService(
+  orderId: number,
+  input: UpdateShippingInput
+) {
+  // 组装 update 数据；只改传入的字段
+  const data: Prisma.OrderUpdateInput = {};
+
+  if (input.shippingCartons !== undefined) {
+    const cartons =
+      input.shippingCartons === null
+        ? 0
+        : Math.max(0, Math.trunc(Number(input.shippingCartons) || 0));
+    (data as any).shippingCartons = cartons;
+  }
+
+  if (input.shippingCost !== undefined) {
+    // Decimal 字段：null 表示清空；数值转字符串
+    (data as any).shippingCost =
+      input.shippingCost === null ? null : String(Number(input.shippingCost));
+  }
+
+  if (input.shippingGstIncl !== undefined) {
+    (data as any).shippingGstIncl =
+      input.shippingGstIncl === null ? true : !!input.shippingGstIncl;
+  }
+
+  if (input.shippingNote !== undefined) {
+    (data as any).shippingNote = input.shippingNote; // 允许 null 置空
+  }
+
+  const updated = await prisma.order.update({
+    where: { id: orderId },
+    data,
+    include: {
+      user: true,
+      customer: true,
+      items: { include: { product: true } },
+    },
+  });
+
+  // 返回时带金额汇总（含运费）
+  const { money } = calcOrderMoney(updated);
+  return { ...updated, ...money };
+}
+
 export const createOrderService = async (data: CreateOrderInput) => {
   const {
     userId,
@@ -66,25 +162,29 @@ export const getAllOrdersService = async () => {
     },
   });
 
-  const ordersWithTotals = orders.map((order) => {
-    const totalDec = order.items.reduce((sum, item) => {
-      const price = (item.product?.price ??
+  return orders.map((order) => {
+    // 1) 价格数字化（方便前端展示）
+    const items = order.items.map((it) => {
+      const priceDec = (it.product?.price ??
         new Prisma.Decimal(0)) as Prisma.Decimal;
-      return sum.add(price.mul(item.quantity));
-    }, new Prisma.Decimal(0));
+      return {
+        ...it,
+        product: {
+          ...it.product,
+          price: toNum2(priceDec),
+        },
+      };
+    });
 
-    const gstDec = totalDec.mul(0.1);
-    const totalWithGSTDec = totalDec.add(gstDec);
+    // 2) 金额汇总（含运费拆税）
+    const { money } = calcOrderMoney(order);
 
     return {
       ...order,
-      total: Number(totalDec.toFixed(2)),
-      gst: Number(gstDec.toFixed(2)),
-      totalWithGST: Number(totalWithGSTDec.toFixed(2)),
+      items,
+      ...money, // -> productSubtotal, shippingExGst, gstOnProducts, gstOnShipping, subtotalExGst, gstTotal, totalWithGST
     };
   });
-
-  return ordersWithTotals;
 };
 
 // 单个订单（前面已给，如果已有就保留）
