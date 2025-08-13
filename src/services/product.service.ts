@@ -1,4 +1,4 @@
-import { prisma } from '../config/db';
+import { prisma } from "../config/db";
 
 export const getAllProductsService = async () => {
   return prisma.product.findMany({
@@ -7,7 +7,7 @@ export const getAllProductsService = async () => {
       Video: true,
     },
     orderBy: {
-      createdAt: 'desc',
+      createdAt: "desc",
     },
   });
 };

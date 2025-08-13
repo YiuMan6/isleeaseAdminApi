@@ -46,17 +46,21 @@ model Video {
 }
 
 model Product {
-  id         Int         @id @default(autoincrement())
-  title      String
-  des        String
-  price      Decimal     @db.Decimal(12, 2)
-  dimensions Json
-  status     Boolean     @default(true)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @default(now()) @updatedAt
-  Image      Image[]
-  OrderItem  OrderItem[]
-  Video      Video[]
+  id             Int      @id @default(autoincrement())
+  title          String
+  des            String
+  price          Decimal  @db.Decimal(12, 2)
+  dimensions     Json
+  status         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+  stockOnHand    Int      @default(0)
+  stockAllocated Int      @default(0) // ✅ 已分配（订单占用）
+
+  Image          Image[]
+  OrderItem      OrderItem[]
+  Video          Video[]
+  StockMovements StockMovement[] // ✅ 与库存流水的反向关系
 }
 
 /// ========== 客户主数据（无账号也有）==========
@@ -78,7 +82,6 @@ model Customer {
 }
 
 /// ========== 用户 ==========
-
 model User {
   id           Int           @id @default(autoincrement())
   createdAt    DateTime      @default(now())
@@ -133,12 +136,29 @@ model Order {
   shippingGstIncl Boolean  @default(true)
   shippingNote    String?
 
-  items OrderItem[]
+  items          OrderItem[]
+  StockMovements StockMovement[] // ✅ 加上这行作为反向关系，错误就没了
 
   @@index([createdAt])
   @@index([status])
   @@index([paymentStatus])
   @@index([customerId])
+}
+
+model StockMovement {
+  id        Int           @id @default(autoincrement())
+  productId Int
+  orderId   Int?
+  type      StockMoveType
+  qty       Int // 正数=入/增加；负数=出/减少
+  reason    String?
+  createdAt DateTime      @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([orderId])
 }
 
 model OrderItem {
@@ -191,4 +211,13 @@ enum UserLabel {
 enum PackageType {
   boxes
   opp
+}
+
+enum StockMoveType {
+  RECEIVE // 入库
+  ADJUST // 盘点/手工调整
+  ALLOCATE // 订单占用
+  DEALLOCATE // 释放占用
+  SHIP // 发货（库存与占用同步减少）
+  RETURN // 退货入库
 }
