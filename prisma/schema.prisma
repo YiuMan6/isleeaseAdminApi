@@ -164,6 +164,7 @@ model StockMovement {
 model OrderItem {
   id        Int     @id @default(autoincrement())
   quantity  Int
+  backorder Int     @default(0)
   orderId   Int
   productId Int
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
