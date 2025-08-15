@@ -2,7 +2,7 @@
 import { prisma } from "../config/db";
 import { OrderStatus } from "@prisma/client";
 
-const OPEN_STATUSES: OrderStatus[] = ["pending", "confirmed", "paid", "packed"];
+const OPEN_STATUSES: OrderStatus[] = ["pending", "confirmed", "packed"];
 
 export type InventoryRow = {
   productId: number;
