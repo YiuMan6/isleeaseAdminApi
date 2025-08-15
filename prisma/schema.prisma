@@ -55,12 +55,14 @@ model Product {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @default(now()) @updatedAt
   stockOnHand    Int      @default(0)
-  stockAllocated Int      @default(0) // ✅ 已分配（订单占用）
+  stockAllocated Int      @default(0)
 
   Image          Image[]
   OrderItem      OrderItem[]
   Video          Video[]
-  StockMovements StockMovement[] // ✅ 与库存流水的反向关系
+  StockMovements StockMovement[]
+
+  @@index([title]) // ✅ 新增：后台搜索更快
 }
 
 /// ========== 客户主数据（无账号也有）==========
@@ -108,15 +110,12 @@ model User {
 model Order {
   id Int @id @default(autoincrement())
 
-  // 过渡期：可空（历史代下单/未登录数据）；你网站若要求登录下单，回填后可设为必填
   userId Int?
   user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  // 新增归属客户（统一聚合历史）；过渡期可空，回填后设为必填
   customerId Int?
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
-  // 快照字段（下单当时的信息，发票/审计用）
   shippingAddress String
   position        String
   createdAt       DateTime      @default(now())
@@ -131,13 +130,17 @@ model Order {
   status          OrderStatus   @default(pending)
   updatedAt       DateTime      @default(now()) @updatedAt
 
+  // ✅ 新增：发货/完成时间戳（审计更清楚）
+  shippedAt   DateTime?
+  completedAt DateTime?
+
   shippingCartons Int?     @default(0)
   shippingCost    Decimal? @db.Decimal(12, 2)
   shippingGstIncl Boolean  @default(true)
   shippingNote    String?
 
   items          OrderItem[]
-  StockMovements StockMovement[] // ✅ 加上这行作为反向关系，错误就没了
+  StockMovements StockMovement[]
 
   @@index([createdAt])
   @@index([status])
@@ -173,13 +176,14 @@ model OrderItem {
   @@unique([orderId, productId])
   @@index([orderId])
   @@index([productId])
+  @@index([backorder])                 // ✅ 新增：缺口筛选更快
+  @@index([productId, orderId])        // ✅ 新增：联表统计更快
 }
 
 /// ========== 枚举 ==========
 enum OrderStatus {
   pending
   confirmed
-  paid
   packed
   shipped
   completed
