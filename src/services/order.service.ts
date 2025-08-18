@@ -1,26 +1,55 @@
 // src/services/order.service.ts
 import { prisma } from "../config/db";
-import { Prisma } from "@prisma/client";
+import {
+  Prisma,
+  OrderStatus,
+  PaymentStatus,
+  StockMoveType,
+} from "@prisma/client";
 import { CreateOrderInput, UpdateOrderUnifiedInput } from "../types/ordert";
 import { calcOrderMoney, toDec, toNum2 } from "../tools/order";
 
-/** ========= 统一更新服务 =========
- * - 单事务
- * - 乐观锁（expectedUpdatedAt）
- * - 维护 paidAt（paid 设置/取消）
- * - items 整单替换（upsert + 删除缺席项）
- * - 返回金额汇总
+/** 辅助：把行项数组聚合成 { productId -> { qty, back } } */
+function foldItems(
+  items: Array<{ productId: number; quantity: number; backorder?: number }>
+) {
+  const m = new Map<number, { qty: number; back: number }>();
+  for (const it of items) {
+    const prev = m.get(it.productId) ?? { qty: 0, back: 0 };
+    m.set(it.productId, {
+      qty: prev.qty + (it.quantity ?? 0),
+      back: prev.back + (it.backorder ?? 0),
+    });
+  }
+  return m;
+}
+
+/** ========= 统一更新服务（含库存流转） =========
+ *  - 单事务 & 乐观锁
+ *  - 付款：paidAt 维护
+ *  - items：整单替换（upsert + 删除缺席项）
+ *  - 库存流转规则：
+ *      paid:   记录 ALLOCATE（审计），不改 onHand
+ *      unpaid/refunded/cancelled（从 paid 来）：记录 DEALLOCATE（审计），不改 onHand
+ *      shipped: 按 (quantity - backorder) 记录 SHIP，并减少 Product.stockOnHand
+ *      completed: 不改库存（货已在 shipped 扣过）
+ *  - 返回金额汇总
  */
 export async function updateOrderUnifiedService(
   orderId: number,
   input: UpdateOrderUnifiedInput
 ) {
   return prisma.$transaction(async (tx) => {
-    // 1) 存在性 + 乐观锁
+    // 1) 取当前订单（带关键字段 + 行项），做存在性/乐观锁校验
     const current = await tx.order.findUnique({
       where: { id: orderId },
-      select: { id: true, updatedAt: true, paidAt: true },
+      include: {
+        items: {
+          select: { productId: true, quantity: true, backorder: true },
+        },
+      },
     });
+
     if (!current) {
       const err: any = new Error("Order not found");
       err.code = "P2025";
@@ -35,10 +64,13 @@ export async function updateOrderUnifiedService(
       }
     }
 
-    // 2) 组装订单字段
+    const prevStatus: OrderStatus = current.status as OrderStatus;
+    const prevPay: PaymentStatus = current.paymentStatus as PaymentStatus;
+
+    // 2) 组装订单更新字段
     const data: Prisma.OrderUpdateInput = {};
 
-    // 基本
+    // 基本信息
     if (typeof input.customerName === "string")
       data.customerName = input.customerName;
     if (typeof input.customerEmail === "string")
@@ -54,17 +86,17 @@ export async function updateOrderUnifiedService(
     if (typeof input.packageType === "string")
       (data as any).packageType = input.packageType;
 
-    // 状态（方案二）
+    // 状态
+    const nextStatus: OrderStatus =
+      (input.orderStatus as OrderStatus) ?? prevStatus;
     if (input.orderStatus) (data as any).status = input.orderStatus;
 
-    // 支付（独立，维护 paidAt）
+    // 支付（维护 paidAt）
+    const nextPay: PaymentStatus =
+      (input.paymentStatus as PaymentStatus) ?? prevPay;
     if (input.paymentStatus) {
       (data as any).paymentStatus = input.paymentStatus;
-      if (input.paymentStatus === "paid") {
-        (data as any).paidAt = new Date();
-      } else {
-        (data as any).paidAt = null;
-      }
+      (data as any).paidAt = input.paymentStatus === "paid" ? new Date() : null;
     }
 
     // 运费
@@ -90,8 +122,9 @@ export async function updateOrderUnifiedService(
     // 先更新订单头
     await tx.order.update({ where: { id: orderId }, data });
 
-    // 3) items：整单替换
+    // 3) items 整单替换（upsert + 删除缺席）
     if (Array.isArray(input.items)) {
+      // 校验 & 合并
       const merged = new Map<
         number,
         { quantity: number; backorder?: number }
@@ -119,10 +152,10 @@ export async function updateOrderUnifiedService(
         where: { orderId, productId: { notIn: productIds } },
       });
 
-      // upsert 每项
+      // upsert
       for (const [productId, val] of merged.entries()) {
         await tx.orderItem.upsert({
-          where: { orderId_productId: { orderId, productId } }, // 依赖 @@unique([orderId, productId])
+          where: { orderId_productId: { orderId, productId } },
           update: {
             quantity: val.quantity,
             ...(typeof val.backorder === "number"
@@ -141,8 +174,106 @@ export async function updateOrderUnifiedService(
       }
     }
 
-    // 4) 返回最新 + 金额
+    // 4) 取“最新行项”用于库存动作计算
     const fresh = await tx.order.findUnique({
+      where: { id: orderId },
+      include: {
+        items: { select: { productId: true, quantity: true, backorder: true } },
+        user: true,
+        customer: true,
+      },
+    });
+    if (!fresh) return null;
+
+    const nowItems = fresh.items.map((it) => ({
+      productId: it.productId,
+      quantity: it.quantity,
+      backorder: it.backorder || 0,
+    }));
+
+    const foldedNow = foldItems(nowItems); // productId -> { qty, back }
+
+    // 5) 库存动作（只根据“状态/支付”的前后变化执行一次性动作）
+    const becamePaid = prevPay !== "paid" && nextPay === "paid";
+    const becameUnpaidOrRefunded =
+      prevPay === "paid" && (nextPay === "unpaid" || nextPay === "refunded");
+
+    const becameCancelled =
+      prevStatus !== "cancelled" && nextStatus === "cancelled";
+    const becameShipped = prevStatus !== "shipped" && nextStatus === "shipped";
+    // completed：不做任何库存动作（货已在 shipped 扣过）
+
+    // 5.1 付款 -> 锁定（审计记录，不改 onHand）
+    if (becamePaid) {
+      const toAlloc: Array<Prisma.StockMovementCreateManyInput> = [];
+      for (const [pid, v] of foldedNow.entries()) {
+        // 你的口径：只要 paid，就按下单量全部锁定；backorder 不影响 allocated 的定义
+        const qty = v.qty;
+        if (qty > 0) {
+          toAlloc.push({
+            productId: pid,
+            orderId: orderId,
+            type: "ALLOCATE",
+            qty, // 审计记录用，正数
+            reason: "Order paid → allocate",
+            createdAt: new Date(),
+          } as Prisma.StockMovementCreateManyInput);
+        }
+      }
+      if (toAlloc.length) await tx.stockMovement.createMany({ data: toAlloc });
+    }
+
+    // 5.2 从 paid → unpaid/refunded 或 订单取消（释放锁定；不改 onHand）
+    if (becameUnpaidOrRefunded || becameCancelled) {
+      const toDealloc: Array<Prisma.StockMovementCreateManyInput> = [];
+      for (const [pid, v] of foldedNow.entries()) {
+        const qty = v.qty;
+        if (qty > 0) {
+          toDealloc.push({
+            productId: pid,
+            orderId: orderId,
+            type: "DEALLOCATE",
+            qty: -qty, // 释放占用，负数
+            reason: becameCancelled
+              ? "Order cancelled → deallocate"
+              : "Payment reversed → deallocate",
+            createdAt: new Date(),
+          } as Prisma.StockMovementCreateManyInput);
+        }
+      }
+      if (toDealloc.length)
+        await tx.stockMovement.createMany({ data: toDealloc });
+    }
+
+    // 5.3 发货 -> 扣实物库存（onHand）并记录流水
+    if (becameShipped) {
+      const shipMovs: Array<Prisma.StockMovementCreateManyInput> = [];
+      for (const [pid, v] of foldedNow.entries()) {
+        const shipQty = Math.max(0, v.qty - v.back); // 只发得出的部分
+        if (shipQty > 0) {
+          // 减 product.stockOnHand
+          await tx.product.update({
+            where: { id: pid },
+            data: { stockOnHand: { decrement: shipQty } },
+          });
+
+          // 记流水（负数 = 出库）
+          shipMovs.push({
+            productId: pid,
+            orderId: orderId,
+            type: "SHIP",
+            qty: -shipQty,
+            reason: "Order shipped → deduct onHand",
+            createdAt: new Date(),
+          } as Prisma.StockMovementCreateManyInput);
+        }
+      }
+      if (shipMovs.length)
+        await tx.stockMovement.createMany({ data: shipMovs });
+    }
+
+    // 6) 价格 number 化 + 金额汇总并返回
+    const final = await tx.order.findUnique({
       where: { id: orderId },
       include: {
         user: true,
@@ -150,10 +281,9 @@ export async function updateOrderUnifiedService(
         items: { include: { product: true } },
       },
     });
-    if (!fresh) return null;
+    if (!final) return null;
 
-    // 价格 number 化（getAll/getById 保持一致）
-    const items = fresh.items.map((it) => {
+    const items = final.items.map((it) => {
       const priceDec = toDec(it?.product?.price);
       return {
         ...it,
@@ -161,11 +291,12 @@ export async function updateOrderUnifiedService(
       };
     });
 
-    const { money } = calcOrderMoney({ ...fresh, items });
-    return { ...fresh, items, ...money };
+    const { money } = calcOrderMoney({ ...final, items });
+    return { ...final, items, ...money };
   });
 }
-/** ========== 其余保留：创建/查询/删除（原样） ========== */
+
+/** ========== 其余：创建/查询/删除（原样） ========== */
 
 export const createOrderService = async (data: CreateOrderInput) => {
   const {
@@ -239,13 +370,13 @@ export const getOrderByIdService = async (id: number) => {
       ...it,
       product: { ...it.product, price: Number(priceDec.toFixed(2)) },
     };
-    // 或者：price: toNum2(priceDec)
   });
 
   return { ...order, items };
 };
 
 export const deleteOrder = async (orderId: number) => {
+  // 简化：直接删。若需要“删除前释放锁定/回滚发货”，可按需要补充。
   return await prisma.$transaction([
     prisma.orderItem.deleteMany({ where: { orderId } }),
     prisma.order.delete({ where: { id: orderId } }),
