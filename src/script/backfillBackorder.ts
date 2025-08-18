@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 const WRITE_MOVEMENT = false;
 
 // 未完成订单状态
-const OPEN_STATUSES: OrderStatus[] = ["pending", "confirmed", "paid", "packed"];
+const OPEN_STATUSES: OrderStatus[] = ["pending", "confirmed", "packed"];
 
 async function backfillOneProduct(productId: number) {
   return prisma.$transaction(async (tx) => {
