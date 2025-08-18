@@ -4,9 +4,7 @@ import {
   getAllOrders,
   getOrderById,
   deleteOrderHandler,
-  patchOrderStatus,
-  updateOrderSnapshot,
-  patchOrderShipping, // ← 新增
+  patchOrderUnified,   
 } from "../controllers/order.controller";
 import { requireAuth, requireAdminLevel } from "../middlewares/auth.middleware";
 
@@ -23,27 +21,12 @@ router.delete(
   deleteOrderHandler
 );
 
-// 修改状态
-router.patch(
-  "/:id/status",
-  requireAuth,
-  requireAdminLevel("ADMIN"),
-  patchOrderStatus
-);
-
-// ✅ 新增：编辑快照（地址/客户信息/items）
 router.patch(
   "/:id",
   requireAuth,
   requireAdminLevel("ADMIN"),
-  updateOrderSnapshot
+  patchOrderUnified
 );
 
-router.patch(
-  "/:id/shipping",
-  requireAuth,
-  requireAdminLevel("ADMIN"),
-  patchOrderShipping
-);
 
 export default router;

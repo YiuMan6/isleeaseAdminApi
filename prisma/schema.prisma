@@ -46,17 +46,23 @@ model Video {
 }
 
 model Product {
-  id         Int         @id @default(autoincrement())
-  title      String
-  des        String
-  price      Decimal     @db.Decimal(12, 2)
-  dimensions Json
-  status     Boolean     @default(true)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @default(now()) @updatedAt
-  Image      Image[]
-  OrderItem  OrderItem[]
-  Video      Video[]
+  id             Int      @id @default(autoincrement())
+  title          String
+  des            String
+  price          Decimal  @db.Decimal(12, 2)
+  dimensions     Json
+  status         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+  stockOnHand    Int      @default(0)
+  stockAllocated Int      @default(0)
+
+  Image          Image[]
+  OrderItem      OrderItem[]
+  Video          Video[]
+  StockMovements StockMovement[]
+
+  @@index([title]) // ✅ 新增：后台搜索更快
 }
 
 /// ========== 客户主数据（无账号也有）==========
@@ -78,7 +84,6 @@ model Customer {
 }
 
 /// ========== 用户 ==========
-
 model User {
   id           Int           @id @default(autoincrement())
   createdAt    DateTime      @default(now())
@@ -105,15 +110,12 @@ model User {
 model Order {
   id Int @id @default(autoincrement())
 
-  // 过渡期：可空（历史代下单/未登录数据）；你网站若要求登录下单，回填后可设为必填
   userId Int?
   user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  // 新增归属客户（统一聚合历史）；过渡期可空，回填后设为必填
   customerId Int?
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
-  // 快照字段（下单当时的信息，发票/审计用）
   shippingAddress String
   position        String
   createdAt       DateTime      @default(now())
@@ -128,12 +130,17 @@ model Order {
   status          OrderStatus   @default(pending)
   updatedAt       DateTime      @default(now()) @updatedAt
 
+  // ✅ 新增：发货/完成时间戳（审计更清楚）
+  shippedAt   DateTime?
+  completedAt DateTime?
+
   shippingCartons Int?     @default(0)
   shippingCost    Decimal? @db.Decimal(12, 2)
   shippingGstIncl Boolean  @default(true)
   shippingNote    String?
 
-  items OrderItem[]
+  items          OrderItem[]
+  StockMovements StockMovement[]
 
   @@index([createdAt])
   @@index([status])
@@ -141,9 +148,26 @@ model Order {
   @@index([customerId])
 }
 
+model StockMovement {
+  id        Int           @id @default(autoincrement())
+  productId Int
+  orderId   Int?
+  type      StockMoveType
+  qty       Int // 正数=入/增加；负数=出/减少
+  reason    String?
+  createdAt DateTime      @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([orderId])
+}
+
 model OrderItem {
   id        Int     @id @default(autoincrement())
   quantity  Int
+  backorder Int     @default(0)
   orderId   Int
   productId Int
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -152,13 +176,14 @@ model OrderItem {
   @@unique([orderId, productId])
   @@index([orderId])
   @@index([productId])
+  @@index([backorder])                 // ✅ 新增：缺口筛选更快
+  @@index([productId, orderId])        // ✅ 新增：联表统计更快
 }
 
 /// ========== 枚举 ==========
 enum OrderStatus {
   pending
   confirmed
-  paid
   packed
   shipped
   completed
@@ -191,4 +216,13 @@ enum UserLabel {
 enum PackageType {
   boxes
   opp
+}
+
+enum StockMoveType {
+  RECEIVE // 入库
+  ADJUST // 盘点/手工调整
+  ALLOCATE // 订单占用
+  DEALLOCATE // 释放占用
+  SHIP // 发货（库存与占用同步减少）
+  RETURN // 退货入库
 }

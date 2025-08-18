@@ -3,6 +3,7 @@ import { corsMiddleware } from "./middlewares/cors.middleware";
 import authRoutes from "./routes/auth.route";
 import orderRoutes from "./routes/order.route";
 import productRoutes from "./routes/product.route";
+import inventoryRoutes from "./routes/inventory.route";
 import { requireAuth } from "./middlewares/auth.middleware";
 
 const app = express();
@@ -19,6 +20,7 @@ app.use("/api/auth", authRoutes); // auth.route.ts 内部已 use(cookieParser())
 app.use("/api/orders", requireAuth, orderRoutes);
 app.use("/api/products", requireAuth, productRoutes);
 
+app.use("/api/inventory", inventoryRoutes);
 // 健康检查（可选）
 app.get("/health", (_req, res) => res.json({ ok: true }));
 

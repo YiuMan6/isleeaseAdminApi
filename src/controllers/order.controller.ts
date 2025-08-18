@@ -3,35 +3,23 @@ import { z } from "zod";
 import {
   createOrderService,
   getAllOrdersService,
-  getOrderByIdService, // ← 如果已加过就保留
+  getOrderByIdService,
   deleteOrder,
-  updateOrderStatusService,
-  updateOrderSnapshotService, // ← 新增
-  updateOrderShippingService,
+  updateOrderUnifiedService,
 } from "../services/order.service";
 
-// —— 按你的 schema（小写枚举）——
+// —— 枚举：去掉 'paid' —— //
 export const PaymentStatus = ["unpaid", "paid", "refunded"] as const;
 export const OrderStatus = [
   "pending",
   "confirmed",
-  "paid",
   "packed",
   "shipped",
   "completed",
   "cancelled",
 ] as const;
 
-const PatchBodySchema = z
-  .object({
-    paymentStatus: z.enum(PaymentStatus).optional(),
-    orderStatus: z.enum(OrderStatus).optional(),
-    note: z.string().max(200).optional(),
-  })
-  .refine((d) => d.paymentStatus || d.orderStatus, {
-    message: "Nothing to update",
-  });
-
+/** 创建 */
 export const createOrder = async (req: Request, res: Response) => {
   try {
     const order = await createOrderService(req.body);
@@ -42,6 +30,7 @@ export const createOrder = async (req: Request, res: Response) => {
   }
 };
 
+/** 列表 */
 export const getAllOrders = async (_req: Request, res: Response) => {
   try {
     const orders = await getAllOrdersService();
@@ -52,11 +41,10 @@ export const getAllOrders = async (_req: Request, res: Response) => {
   }
 };
 
-// 如果还没加过：GET /orders/:id
+/** 单个 */
 export const getOrderById = async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ message: "Invalid order id" });
-
   try {
     const order = await getOrderByIdService(id);
     if (!order) return res.status(404).json({ message: "Order not found" });
@@ -67,6 +55,7 @@ export const getOrderById = async (req: Request, res: Response) => {
   }
 };
 
+/** 删除 */
 export const deleteOrderHandler = async (req: Request, res: Response) => {
   try {
     const orderId = parseInt(req.params.id, 10);
@@ -81,12 +70,57 @@ export const deleteOrderHandler = async (req: Request, res: Response) => {
   }
 };
 
-// PATCH /orders/:id/status —— 修改支付状态/订单状态
-export const patchOrderStatus = async (req: Request, res: Response) => {
+/** 统一更新 */
+const UnifiedUpdateSchema = z
+  .object({
+    expectedUpdatedAt: z.string().datetime().optional(),
+
+    // 基本
+    customerName: z.string().min(1).optional(),
+    customerEmail: z.string().email().optional(),
+    customerPhone: z.string().min(1).optional(),
+    shippingAddress: z.string().min(1).optional(),
+    position: z.string().optional(),
+    note: z.string().max(500).nullable().optional(),
+    barcodeAll: z.boolean().optional(),
+    packageType: z.enum(["boxes", "opp"]).optional(),
+
+    // —— 状态（无 'paid'）——
+    orderStatus: z.enum(OrderStatus).optional(),
+
+    // 支付（独立）
+    paymentStatus: z.enum(PaymentStatus).optional(),
+
+    // 运费
+    shippingCartons: z.coerce.number().int().min(0).optional().nullable(),
+    shippingCost: z.union([z.coerce.number(), z.null()]).optional(),
+    shippingGstIncl: z.boolean().optional().nullable(),
+    shippingNote: z.string().optional().nullable(),
+
+    // 明细
+    items: z
+      .array(
+        z.object({
+          productId: z.number().int().positive(),
+          quantity: z.number().int().min(0),
+          backorder: z.number().int().min(0).optional(),
+        })
+      )
+      .optional(),
+  })
+  .refine(
+    (d) =>
+      Object.keys(d).some(
+        (k) => k !== "expectedUpdatedAt" && (d as any)[k] !== undefined
+      ),
+    { message: "Nothing to update" }
+  );
+
+export const patchOrderUnified = async (req: Request, res: Response) => {
   const orderId = Number(req.params.id);
   if (!orderId) return res.status(400).json({ message: "Invalid order id" });
 
-  const parsed = PatchBodySchema.safeParse(req.body);
+  const parsed = UnifiedUpdateSchema.safeParse(req.body);
   if (!parsed.success) {
     return res
       .status(400)
@@ -94,107 +128,27 @@ export const patchOrderStatus = async (req: Request, res: Response) => {
   }
 
   try {
-    const actorId = (req as any).user?.id as number | undefined; // 若用了 requireAuth
-    const updated = await updateOrderStatusService(orderId, {
-      paymentStatus: parsed.data.paymentStatus,
-      orderStatus: parsed.data.orderStatus,
-      note: parsed.data.note,
-      actorId,
-    });
-    res.json({ success: true, data: updated });
-  } catch (e: any) {
-    if (e?.code === "P2025") {
-      return res.status(404).json({ message: "Order not found" });
-    }
-    console.error("Patch order status error:", e);
-    res.status(400).json({ message: e?.message || "Failed to update order" });
-  }
-};
-
-/** ==================== 新增：编辑订单快照 ====================
- * PATCH /orders/:id
- * 允许修改：客户信息、地址、note、barcodeAll、packageType、items
- * 可选乐观锁：expectedUpdatedAt（ISO 字符串）
- */
-const UpdateSnapshotSchema = z.object({
-  expectedUpdatedAt: z.string().datetime().optional(),
-  customerName: z.string().min(1).optional(),
-  customerEmail: z.string().email().optional(),
-  customerPhone: z.string().min(1).optional(),
-  shippingAddress: z.string().min(1).optional(),
-  position: z.string().min(1).optional(),
-  note: z.string().max(500).nullable().optional(),
-  barcodeAll: z.boolean().optional(),
-  packageType: z.enum(["boxes", "opp"]).optional(),
-  items: z
-    .array(
-      z.object({
-        productId: z.number().int().positive(),
-        quantity: z.number().int().min(1),
-      })
-    )
-    .nonempty()
-    .optional(), // 传就替换，不传则不改
-});
-
-export const updateOrderSnapshot = async (req: Request, res: Response) => {
-  const orderId = Number(req.params.id);
-  if (!orderId) return res.status(400).json({ message: "Invalid order id" });
-
-  const parsed = UpdateSnapshotSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res
-      .status(400)
-      .json({ message: "Invalid body", issues: parsed.error.flatten() });
-  }
-
-  try {
-    const updated = await updateOrderSnapshotService(orderId, parsed.data);
+    const updated = await updateOrderUnifiedService(orderId, parsed.data);
     return res.json({ success: true, data: updated });
   } catch (e: any) {
     if (e?.code === "P2025") {
       return res.status(404).json({ message: "Order not found" });
     }
     if (e?.message === "ORDER_VERSION_CONFLICT") {
-      return res.status(409).json({
-        message: "Order has been modified, please refresh and retry.",
-      });
+      return res
+        .status(409)
+        .json({ message: "Order has been modified, please refresh and retry." });
     }
-    console.error("Update order snapshot error:", e);
+    console.error("Patch order unified error:", e);
     return res
-      .status(400)
+      .status(e?.status || 500)
       .json({ message: e?.message || "Failed to update order" });
   }
 };
 
-const UpdateShippingSchema = z.object({
-  shippingCartons: z.coerce.number().int().min(0).optional().nullable(), // null=清零
-  shippingCost: z.union([z.coerce.number(), z.null()]).optional(), // null=清空
-  shippingGstIncl: z.boolean().optional().nullable(), // null=>默认 true
-  shippingNote: z.string().optional().nullable(), // null=清空
+const ShippingOnlySchema = z.object({
+  shippingCartons: z.coerce.number().int().min(0).optional().nullable(),
+  shippingCost: z.union([z.coerce.number(), z.null()]).optional(),
+  shippingGstIncl: z.boolean().optional().nullable(),
+  shippingNote: z.string().optional().nullable(),
 });
-
-export const patchOrderShipping = async (req: Request, res: Response) => {
-  const orderId = Number(req.params.id);
-  if (!orderId) return res.status(400).json({ message: "Invalid order id" });
-
-  const parsed = UpdateShippingSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res
-      .status(400)
-      .json({ message: "Invalid body", issues: parsed.error.flatten() });
-  }
-
-  try {
-    const updated = await updateOrderShippingService(orderId, parsed.data);
-    return res.json({ success: true, data: updated });
-  } catch (e: any) {
-    if (e?.code === "P2025") {
-      return res.status(404).json({ message: "Order not found" });
-    }
-    console.error("Patch order shipping error:", e);
-    return res
-      .status(400)
-      .json({ message: e?.message || "Failed to update shipping" });
-  }
-};
