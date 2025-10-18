@@ -46,23 +46,22 @@ model Video {
 }
 
 model Product {
-  id             Int      @id @default(autoincrement())
+  id             Int             @id @default(autoincrement())
   title          String
   des            String
-  price          Decimal  @db.Decimal(12, 2)
+  price          Decimal         @db.Decimal(12, 2)
   dimensions     Json
-  status         Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @default(now()) @updatedAt
-  stockOnHand    Int      @default(0)
-  stockAllocated Int      @default(0)
-
+  status         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @default(now()) @updatedAt
+  stockOnHand    Int             @default(0)
+  stockAllocated Int             @default(0)
   Image          Image[]
   OrderItem      OrderItem[]
-  Video          Video[]
   StockMovements StockMovement[]
+  Video          Video[]
 
-  @@index([title]) // ✅ 新增：后台搜索更快
+  @@index([title])
 }
 
 /// ========== 客户主数据（无账号也有）==========
@@ -75,9 +74,8 @@ model Customer {
   abn       String?
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
-
-  users  User[]
-  orders Order[]
+  orders    Order[]
+  users     User[]
 
   @@index([email])
   @@index([phone])
@@ -85,62 +83,48 @@ model Customer {
 
 /// ========== 用户 ==========
 model User {
-  id           Int           @id @default(autoincrement())
-  createdAt    DateTime      @default(now())
-  label        UserLabel
-  email        String        @unique
-  password     String
-  retailerTier RetailerTier?
-  name         String
-
-  // 仅 INTERNAL 有意义；其它用户为 NULL
+  id             Int           @id @default(autoincrement())
+  createdAt      DateTime      @default(now())
+  label          UserLabel
+  email          String        @unique
+  password       String
+  retailerTier   RetailerTier?
+  name           String
+  customerId     Int?
   adminLevel     AdminLevel?
-  sessionVersion Int         @default(0) // 🔐 失效刷新令牌
-
-  customerId Int?
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-
-  // （可选，将来要更细权限时可以启用）
-  // scopes       String[]     @db.Text[] @default([])
-
-  orders Order[]
+  sessionVersion Int           @default(0)
+  orders         Order[]
+  customer       Customer?     @relation(fields: [customerId], references: [id])
 }
 
 /// ========== 订单 & 订单项 ==========
 model Order {
-  id Int @id @default(autoincrement())
-
-  userId Int?
-  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  customerId Int?
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
-
+  id              Int             @id @default(autoincrement())
+  userId          Int?
   shippingAddress String
   position        String
-  createdAt       DateTime      @default(now())
+  createdAt       DateTime        @default(now())
   customerEmail   String
   customerName    String
   customerPhone   String
-  barcodeAll      Boolean       @default(false)
+  barcodeAll      Boolean         @default(false)
   packageType     PackageType
   note            String?
   paidAt          DateTime?
-  paymentStatus   PaymentStatus @default(unpaid)
-  status          OrderStatus   @default(pending)
-  updatedAt       DateTime      @default(now()) @updatedAt
-
-  // ✅ 新增：发货/完成时间戳（审计更清楚）
-  shippedAt   DateTime?
-  completedAt DateTime?
-
-  shippingCartons Int?     @default(0)
-  shippingCost    Decimal? @db.Decimal(12, 2)
-  shippingGstIncl Boolean  @default(true)
+  paymentStatus   PaymentStatus   @default(unpaid)
+  status          OrderStatus     @default(pending)
+  updatedAt       DateTime        @default(now()) @updatedAt
+  customerId      Int?
+  shippingCartons Int?            @default(0)
+  shippingCost    Decimal?        @db.Decimal(12, 2)
+  shippingGstIncl Boolean         @default(true)
   shippingNote    String?
-
-  items          OrderItem[]
-  StockMovements StockMovement[]
+  completedAt     DateTime?
+  shippedAt       DateTime?
+  customer        Customer?       @relation(fields: [customerId], references: [id])
+  user            User?           @relation(fields: [userId], references: [id])
+  items           OrderItem[]
+  StockMovements  StockMovement[]
 
   @@index([createdAt])
   @@index([status])
@@ -153,12 +137,11 @@ model StockMovement {
   productId Int
   orderId   Int?
   type      StockMoveType
-  qty       Int // 正数=入/增加；负数=出/减少
+  qty       Int
   reason    String?
   createdAt DateTime      @default(now())
-
-  product Product @relation(fields: [productId], references: [id])
-  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  order     Order?        @relation(fields: [orderId], references: [id])
+  product   Product       @relation(fields: [productId], references: [id])
 
   @@index([productId])
   @@index([orderId])
@@ -167,17 +150,17 @@ model StockMovement {
 model OrderItem {
   id        Int     @id @default(autoincrement())
   quantity  Int
-  backorder Int     @default(0)
   orderId   Int
   productId Int
+  backorder Int     @default(0)
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product   Product @relation(fields: [productId], references: [id])
 
   @@unique([orderId, productId])
   @@index([orderId])
   @@index([productId])
-  @@index([backorder])                 // ✅ 新增：缺口筛选更快
-  @@index([productId, orderId])        // ✅ 新增：联表统计更快
+  @@index([backorder])
+  @@index([productId, orderId])
 }
 
 /// ========== 枚举 ==========
@@ -203,8 +186,8 @@ enum RetailerTier {
 }
 
 enum AdminLevel {
-  SUPER // 最高管理员
-  ADMIN // 普通管理员
+  SUPER
+  ADMIN
 }
 
 enum UserLabel {
@@ -219,10 +202,10 @@ enum PackageType {
 }
 
 enum StockMoveType {
-  RECEIVE // 入库
-  ADJUST // 盘点/手工调整
-  ALLOCATE // 订单占用
-  DEALLOCATE // 释放占用
-  SHIP // 发货（库存与占用同步减少）
-  RETURN // 退货入库
+  RECEIVE
+  ADJUST
+  ALLOCATE
+  DEALLOCATE
+  SHIP
+  RETURN
 }
